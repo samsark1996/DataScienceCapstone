@@ -1,0 +1,172 @@
+---
+title: "Milestone Report: Data Science Capstone Project"
+author: "S Sarkar"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+      number_section: true
+      code_folding: hide
+    # md_document:
+    # variant: markdown_github
+---
+
+```{r setup, include=FALSE,echo=FALSE,warning=FALSE}
+rm(list = ls(all.names = TRUE))
+cat('\14')
+set.seed(299792458)
+library(stringr)
+library(data.table)
+library(dplyr)
+
+library(tm)
+library(ngram)
+library(tidytext)
+library(quanteda)
+
+library(DT)
+library(kableExtra)
+library(ggplot2)
+library(plotly)
+library(wordcloud)
+```
+
+# Executive Summary
+This report describes progress of building a next word prediction 
+model as per the requirement of the Data Science Capstone project in Coursera.
+This problem involves prediction of the next word given a string of words 
+based on a previous set of text sources taken from various sources. The 
+current milestone achieves the pre-processing of the data, exploratory data 
+analysis and construction of n-grams that can be used for prediction of the
+user provided next word.
+
+# Data sources
+
+The data source is from a corpus called 
+[HC Corpora](https://web-beta.archive.org/web/20160930083655/http://www.corpora.heliohost.org/aboutcorpus.html).
+The data can be downloaded from
+[here](https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip).
+The data consists of texts from Tweets, blogs and news items. A brief summary of
+the data is included below.
+```{r data_summary,echo=FALSE,warning=FALSE}
+# Load complete data
+txtpath = "D:/1_Studies/R and related subjects/Coursera 1/ProjectWork/Capstone/"
+
+txtstrm = list()
+txtstrm[[1]] = readLines(paste0(txtpath,"Data/final/en_US/en_US.twitter.txt",collapse = ""),skipNul = TRUE)
+txtstrm[[2]] = readLines(paste0(txtpath,"Data/final/en_US/en_US.blogs.txt",collapse = ""),skipNul = TRUE)
+txtstrm[[3]] = readLines(paste0(txtpath,"Data/final/en_US/en_US.news.txt",collapse = ""),skipNul = TRUE)
+
+# saveRDS(object = txtstrm,file = paste0(txtpath,"/txtstrm.RDS",collapse = ""),ascii = F)
+
+############# Preliminary EDA
+## Data summary
+Data_sources = c("Tweet","Blogs","News")
+Nlines = vector()
+Memory = vector()
+N_char = vector()
+N_words = vector()
+N_punc = vector()
+N_wrd_per_line = list()
+N_wrd_avg = vector()
+# Number of lines in the data
+Nlines[1] = length(txtstrm[[1]])
+Nlines[2] = length(txtstrm[[2]])
+Nlines[3] = length(txtstrm[[3]])
+# Size of the variables in R environment
+Memory[1] = object.size(txtstrm[[1]])
+Memory[2] = object.size(txtstrm[[2]])
+Memory[3] = object.size(txtstrm[[3]])
+# Number of characters
+N_char[1] = sum(nchar(txtstrm[[1]]))
+N_char[2] = sum(nchar(txtstrm[[1]]))
+N_char[3] = sum(nchar(txtstrm[[1]]))
+# Number of words per line
+N_wrd_per_line[[1]] = sapply(str_split(txtstrm[[1]],pattern = " "), length)
+N_wrd_per_line[[2]] = sapply(str_split(txtstrm[[2]],pattern = " "), length)
+N_wrd_per_line[[3]] = sapply(str_split(txtstrm[[3]],pattern = " "), length)
+
+# Number of words per line on average
+N_wrd_avg[1] = round(mean(N_wrd_per_line[[1]]))
+N_wrd_avg[2] = round(mean(N_wrd_per_line[[2]]))
+N_wrd_avg[3] = round(mean(N_wrd_per_line[[3]]))
+rm(N_wrd_per_line)
+
+# Count number of punctuations 
+N_punc[1] = sum(str_count(txtstrm[[1]],'[[:punct:][:blank:]]+'))
+N_punc[2] = sum(str_count(txtstrm[[2]],'[[:punct:][:blank:]]+'))
+N_punc[3] = sum(str_count(txtstrm[[3]],'[[:punct:][:blank:]]+'))
+
+# Data Summary
+Data_summary = data.table("Data sources" = Data_sources,
+                          "Size in the memory" = Memory/10e5,
+                          "No. of Lines" = Nlines,
+                          "No. of Characters" = N_char,
+                          "No. of words per line" = N_wrd_avg)
+
+Data_summary %>%
+  kbl(caption = "Basic statistics of the text sources")%>%
+  kable_classic_2("hover", full_width = F)
+# wordcloud(words = df$word, freq = df$freq, min.freq = 1,           max.words=200, random.order=FALSE, rot.per=0.35,            colors=brewer.pal(8, "Dark2"))
+
+```
+
+# Tools used:
+
+A brief but useful description of R infrastructure for Natural Language 
+Processing is given 
+[here](https://cran.r-project.org/web/views/NaturalLanguageProcessing.html).
+For the current study, the list of R packages used is given below.
+
+- Basic data handling
+  - stringr
+  - data.table
+  - dplyr
+
+- Natural Language Processing tools
+  - tm
+  - ngram
+  - tidytext
+  - quanteda
+
+- Report generation and plotting
+  - DT
+  - kableExtra
+  - ggplot2
+  - plotly
+  - wordcloud
+
+# Data cleaning and pre-processing
+
+The data has a number of features and attributes that interferes with the 
+intended use. Therefor, the data needs to be cleaned and processed before
+it can be modeled. This involves certain key steps as listed below.
+
+- __Tokenization : __ This process involves splitting the long strings of text 
+into meaningful words or tokens that can be used for further analysis. 
+___tidytext___ package is used for this purpose.
+- __Removal of artefacts (URLs, hash tags, emails etc) :__ As the data is from
+internet, it includes a number of artefacts of the domain such as URLs, hash 
+tags, emails etc. These are mostly not significant for the current project.
+This was accomplished by using regular expressions.
+- __Removal of Profanity :__ For a word prediction model, profanity should be 
+excluded from the result. Thus, they are removed. A list of profanity can be 
+found [here]().
+- __Normalization :__ The data needs to be normalized to either upper or lower 
+case for easy handling.
+- __Stemming :__ Stemming is the process where lexical variations of the words
+are reduced by removing prefixes and suffixes - thus converting the words into 
+their stem.
+- __Lemmatization :__ Lemmatization is the process of standardization where
+inflected forms are grouped togather to be counted.
+- __Removal of stop words :__ Stop words are words in an expression which 
+can be removed without changing the main sentiment or meaning of the expression.
+The resulting expression will contain all key words required for conveying the
+information. Stop words are required to be removed from the data for meaningful
+analysis.
+
+
+# 
+
